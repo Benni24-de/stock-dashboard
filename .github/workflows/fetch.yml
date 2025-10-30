@@ -1,0 +1,52 @@
+name: Fetch & update stock data (hourly)
+
+on:
+  # Manuell startbar über GitHub Weboberfläche
+  workflow_dispatch: {}
+
+  # Jeden Tag, jede volle Stunde (UTC)
+  schedule:
+    - cron: "0 * * * *"
+
+permissions:
+  contents: write  # darf Commits schreiben
+
+concurrency:
+  group: fetch-latest
+  cancel-in-progress: true
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Fetch latest data
+        env:
+          FINNHUB_KEY: ${{ secrets.FINNHUB_KEY }}
+          ALPHA_KEY: ${{ secrets.ALPHA_KEY }}
+        run: |
+          echo "=== Starte Fetch-Job ==="
+          date
+          node scripts/fetchData.mjs
+          echo "=== Vorschau ==="
+          head -n 20 public/data/latest.json || true
+
+      - name: Commit & push if changed
+        run: |
+          git config user.name "data-bot"
+          git config user.email "data-bot@users.noreply.github.com"
+          git add public/data/latest.json
+          git diff --cached --quiet && echo "Keine Änderungen zum Commit." || git commit -m "chore: update latest.json [auto]"
+          git push || echo "Kein Push (evtl. keine Änderungen)"
